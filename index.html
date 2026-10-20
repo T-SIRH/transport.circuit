@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Point de Ramassage Employés</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 15px; background-color: #eef2f7; color: #333; }
+    .app-card { max-width: 500px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+    h2 { text-align: center; color: #1a73e8; margin-top: 0; font-size: 22px; }
+    p.subtitle { text-align: center; font-size: 13px; color: #666; margin-bottom: 20px; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+    .optionnel { font-weight: normal; color: #888; }
+    input[type="text"], select { width: 100%; padding: 12px; box-sizing: border-box; border: 2px solid #dadce0; border-radius: 6px; font-size: 15px; background: #fff; }
+    select:disabled { background-color: #f1f3f4; color: #999; }
+    .section-title { font-size: 15px; font-weight: bold; color: #1a73e8; margin: 25px 0 12px; padding-top: 15px; border-top: 1px solid #e0e0e0; }
+
+    .geo-btn { background-color: #34a853; margin-bottom: 15px; }
+    .geo-btn:hover { background-color: #2d8e47; }
+    .maps-link-btn { background-color: #ea4335; text-align: center; display: block; text-decoration: none; color: white; padding: 12px; border-radius: 6px; font-weight: bold; margin-bottom: 15px; font-size: 14px; }
+    .maps-link-btn:hover { background-color: #c5372a; }
+
+    button { width: 100%; padding: 14px; background-color: #1a73e8; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    button:hover { background-color: #1557b0; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #status { margin-top: 15px; font-weight: bold; text-align: center; font-size: 14px; padding: 10px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="app-card">
+  <h2>📍 Localisation de Ramassage</h2>
+  <p class="subtitle">Indiquez votre badge, puis choisissez un point de ramassage dans la liste ou ajoutez vos coordonnées GPS.</p>
+
+  <div class="form-group">
+    <label for="badge">Votre Numéro de Badge :</label>
+    <input type="text" id="badge" placeholder="Ex: 7173" autocomplete="off">
+  </div>
+
+  <div class="form-group">
+    <label for="bus">Numéro du Bus utilisé <span class="optionnel">(facultatif)</span> :</label>
+    <input type="text" id="bus" placeholder="Ex: 12" autocomplete="off">
+  </div>
+
+  <div class="section-title">🚏 Choisir un point de ramassage</div>
+
+  <div class="form-group">
+    <label for="wilaya">Wilaya :</label>
+    <select id="wilaya" onchange="surWilaya()" disabled><option value="">Chargement...</option></select>
+  </div>
+
+  <div class="form-group">
+    <label for="daira">Daira :</label>
+    <select id="daira" onchange="surDaira()" disabled><option value="">-- Choisir la Daira --</option></select>
+  </div>
+
+  <div class="form-group">
+    <label for="commune">Commune :</label>
+    <select id="commune" onchange="surCommune()" disabled><option value="">-- Choisir la Commune --</option></select>
+  </div>
+
+  <div class="form-group">
+    <label for="point">Nom du Point :</label>
+    <select id="point" onchange="surPoint()" disabled><option value="">-- Choisir le Point --</option></select>
+  </div>
+
+  <div class="section-title">🛰️ Ou utiliser votre position</div>
+
+  <div class="form-group">
+    <label>Méthode A (Si vous êtes sur place) :</label>
+    <button type="button" class="geo-btn" onclick="obtenirGeolocalisation()">Me géolocaliser automatiquement</button>
+  </div>
+
+  <div class="form-group">
+    <label>Méthode B (Sélectionner manuellement) :</label>
+    <a href="https://maps.google.com" target="_blank" class="maps-link-btn">Ouvrir l'application Google Maps ↗</a>
+  </div>
+
+  <div class="form-group">
+    <label for="gps_manual">Vos coordonnées GPS :</label>
+    <input type="text" id="gps_manual" placeholder="Ex: 35.6976, -0.6331">
+  </div>
+
+  <button id="btnValider" onclick="soumettreDonnees()">Valider mon point de ramassage</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  // URL de déploiement Apps Script (se termine par /exec)
+  const urlGoogleApp = "https://script.google.com/macros/s/AKfycbxqc-1F411qM_RIIUIgCdjU5BFlKZBLjx10Nc3_13zGftm5GndeW1dGTwkRw3xzmH2LXA/exec";
+
+  var points = [];
+
+  // Chargement de la liste des points depuis la feuille "Points"
+  window.onload = function() {
+    fetch(urlGoogleApp + "?action=points")
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        points = (data && data.points) ? data.points : [];
+        if (points.length === 0) {
+          remplirSelect('wilaya', [], "Aucun point disponible");
+          return;
+        }
+        remplirSelect('wilaya', valeursUniques(points, 'wilaya'), "-- Choisir la Wilaya --");
+      })
+      .catch(function(erreur) {
+        console.error("Erreur de liaison :", erreur);
+        remplirSelect('wilaya', [], "Erreur de chargement");
+        AfficherStatut("Impossible de charger la liste des points. Vous pouvez saisir vos coordonnées GPS manuellement.", "red");
+      });
+  };
+
+  function valeursUniques(liste, cle) {
+    var vus = {}, res = [];
+    liste.forEach(function(p) {
+      var v = p[cle];
+      if (v && !vus[v]) { vus[v] = true; res.push(v); }
+    });
+    return res.sort(function(a, b) { return a.localeCompare(b, 'fr'); });
+  }
+
+  function remplirSelect(id, valeurs, texteDefaut) {
+    var sel = document.getElementById(id);
+    sel.innerHTML = "";
+    var opt0 = document.createElement('option');
+    opt0.value = "";
+    opt0.textContent = texteDefaut;
+    sel.appendChild(opt0);
+    valeurs.forEach(function(v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.textContent = v;
+      sel.appendChild(o);
+    });
+    sel.disabled = valeurs.length === 0;
+  }
+
+  function surWilaya() {
+    var w = document.getElementById('wilaya').value;
+    remplirSelect('commune', [], "-- Choisir la Commune --");
+    remplirSelect('point', [], "-- Choisir le Point --");
+    if (!w) { remplirSelect('daira', [], "-- Choisir la Daira --"); return; }
+    var liste = points.filter(function(p) { return p.wilaya === w; });
+    remplirSelect('daira', valeursUniques(liste, 'daira'), "-- Choisir la Daira --");
+  }
+
+  function surDaira() {
+    var w = document.getElementById('wilaya').value;
+    var d = document.getElementById('daira').value;
+    remplirSelect('point', [], "-- Choisir le Point --");
+    if (!d) { remplirSelect('commune', [], "-- Choisir la Commune --"); return; }
+    var liste = points.filter(function(p) { return p.wilaya === w && p.daira === d; });
+    remplirSelect('commune', valeursUniques(liste, 'commune'), "-- Choisir la Commune --");
+  }
+
+  function surCommune() {
+    var w = document.getElementById('wilaya').value;
+    var d = document.getElementById('daira').value;
+    var c = document.getElementById('commune').value;
+    if (!c) { remplirSelect('point', [], "-- Choisir le Point --"); return; }
+    var liste = points.filter(function(p) { return p.wilaya === w && p.daira === d && p.commune === c; });
+    remplirSelect('point', valeursUniques(liste, 'nom'), "-- Choisir le Point --");
+  }
+
+  // Quand un point est choisi, ses coordonnées GPS sont remplies automatiquement
+  function surPoint() {
+    var p = pointChoisi();
+    if (p) {
+      document.getElementById('gps_manual').value = p.gps;
+      AfficherStatut("Point sélectionné : " + p.nom, "green");
+    }
+  }
+
+  function pointChoisi() {
+    var w = document.getElementById('wilaya').value;
+    var d = document.getElementById('daira').value;
+    var c = document.getElementById('commune').value;
+    var n = document.getElementById('point').value;
+    if (!n) return null;
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i];
+      if (p.wilaya === w && p.daira === d && p.commune === c && p.nom === n) return p;
+    }
+    return null;
+  }
+
+  // Méthode de détection GPS automatique par le téléphone
+  function obtenirGeolocalisation() {
+    if (navigator.geolocation) {
+      AfficherStatut("Calcul de votre position GPS en cours...", "orange");
+      navigator.geolocation.getCurrentPosition(function(position) {
+        var lat = position.coords.latitude;
+        var lng = position.coords.longitude;
+        document.getElementById('gps_manual').value = lat + ", " + lng;
+        AfficherStatut("Position récupérée avec succès !", "green");
+      }, function(error) {
+        AfficherStatut("Impossible de vous géolocaliser. Veuillez copier-coller vos coordonnées manuellement.", "red");
+      });
+    } else {
+      AfficherStatut("La géolocalisation n'est pas supportée par votre navigateur.", "red");
+    }
+  }
+
+  function soumettreDonnees() {
+    var badge = document.getElementById('badge').value.trim();
+    var bus = document.getElementById('bus').value.trim();
+    var gps = document.getElementById('gps_manual').value.trim();
+
+    if (!badge) {
+      AfficherStatut("Erreur : Le numéro de badge est obligatoire.", "red");
+      return;
+    }
+    if (!gps) {
+      AfficherStatut("Erreur : Choisissez un point ou renseignez des coordonnées GPS.", "red");
+      return;
+    }
+
+    var p = pointChoisi();
+    var donnees = {
+      badge: badge,
+      gps: gps,
+      bus: bus,
+      wilaya:   p ? p.wilaya  : "",
+      daira:    p ? p.daira   : "",
+      commune:  p ? p.commune : "",
+      nomPoint: p ? p.nom     : ""
+    };
+
+    var btn = document.getElementById('btnValider');
+    btn.disabled = true;
+    AfficherStatut("Enregistrement en cours...", "orange");
+
+    // text/plain évite le blocage CORS (pas de requête préliminaire)
+    fetch(urlGoogleApp, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(donnees)
+    })
+      .then(function(response) { return response.json(); })
+      .then(function(reponse) {
+        if (reponse.ok) {
+          AfficherStatut(reponse.message, "green");
+          document.getElementById('badge').value = "";
+          document.getElementById('bus').value = "";
+          document.getElementById('gps_manual').value = "";
+          document.getElementById('wilaya').value = "";
+          surWilaya();
+        } else {
+          AfficherStatut(reponse.message || "Erreur lors de l'enregistrement.", "red");
+        }
+      })
+      .catch(function(erreur) {
+        AfficherStatut("Erreur réseau : " + erreur, "red");
+      })
+      .finally(function() { btn.disabled = false; });
+  }
+
+  function AfficherStatut(message, couleur) {
+    var statusBox = document.getElementById('status');
+    statusBox.innerText = message;
+    if (couleur === "red") {
+      statusBox.style.color = "#721c24"; statusBox.style.backgroundColor = "#f8d7da";
+    } else if (couleur === "orange") {
+      statusBox.style.color = "#856404"; statusBox.style.backgroundColor = "#fff3cd";
+    } else if (couleur === "green") {
+      statusBox.style.color = "#155724"; statusBox.style.backgroundColor = "#d4edda";
+    }
+  }
+</script>
+</body>
+</html>
